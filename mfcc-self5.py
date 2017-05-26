@@ -10,6 +10,12 @@ from scipy.fftpack import dct
 import pyaudio
 import audioop
 
+def loadRawData(filename):
+	"""load data from binary .raw format"""
+	with open(filename, 'rb') as fid:
+		datafile = np.fromfile(fid, dtype=np.int16) #get frames
+	return datafile
+
 def wavplayer(audio,fs):
 	"""pyaudio wave player for numpy arrays"""
 	p = pyaudio.PyAudio()
@@ -143,8 +149,9 @@ low_freq = 0
 # MFCC processing pipeline
 #=======================================================================
 
-# read in audio
-(fs,audio) = wav.read('artos_ofenrohr_8k.wav')
+# read in audio: 
+(fs,audio) = wav.read('artos_ofenrohr_8k.wav') #.wav file
+datafile = loadRawData('is1a0001_043.raw')
 # preemphasis
 audio_pre = preemphasis(audio)
 # windowing, fft
