@@ -26,7 +26,6 @@ fs = 16000  #Hz
 duration = 5  # seconds
 
 
-
 def loadrawdata(filename):
 	"""load data from binary .raw format"""
 	with open(filename, 'rb') as fid:
@@ -96,21 +95,21 @@ def winfft(audio, fs, frame_time=25,step_time=10, window=np.hamming):
 		powfft_list.append(powfft_chunk)	
 	return magfft_list,powfft_list, win, num_fft 
 
-def melbank(fs, numbins=26,lowfreq=0, num_fft=None):
+def melbanks(fs, numbins=26,lowfreq=0, num_fft=None):
 	"""create Mel-filterbank (26 standard, or 26-40 bins)"""
 	highfreq = fs/2
 	mel_low = 2595 * np.log10(1+lowfreq/700.)
 	mel_high  = 2595 * np.log10(1+highfreq/700.)
 	mel_peaks = np.linspace(mel_low,mel_high,numbins+2)
 	hz_peaks = 700*(10**(mel_peaks/2595.0)-1)
-	bin = np.floor((num_fft+1)*hz_peaks/fs)
+	bins = np.floor((num_fft+1)*hz_peaks/fs)
 	#create mel-bank
 	melbank = np.zeros([numbins,num_fft//2+1])
 	for j in range(0,numbins):
-		for i in range(int(bin[j]), int(bin[j+1])):
-			melbank[j,i] = (i - bin[j]) / (bin[j+1]-bin[j])
-		for i in range(int(bin[j+1]), int(bin[j+2])):
-			melbank[j,i] = (bin[j+2]-i) / (bin[j+2]-bin[j+1])
+		for i in range(int(bins[j]), int(bins[j+1])):
+			melbank[j,i] = (i - bins[j]) / (bins[j+1]-bins[j])
+		for i in range(int(bins[j+1]), int(bins[j+2])):
+			melbank[j,i] = (bins[j+2]-i) / (bins[j+2]-bins[j+1])
 	return melbank 
 	
 def melspec(powfft_list, melbank):
@@ -152,107 +151,124 @@ def dctopt(mfcc_list, lift_factor=22):
 			mfcclift_list.append(mfcc)
 	return mfcclift_list
 
-def spectrogram(energy_list, mfcclift_list):
+def staticfeatures(energy_list, mfcclift_list):
 	"""init spectrogram with 13 MFCC features"""
 	mfcc_len = len(energy_list)
-	spectrogram = np.zeros([39,mfcc_len])
-    #fill in 13 MFCCs
+	cepstrum = np.zeros([mfcc_len,13])
 	for pos in range(len(mfcclift_list)):
-		#mfccs = np.append(energy_list[pos],mfcclift_list[pos])
-		mfcclift_list[pos][0] = energy_list[pos]
-		mfccs = mfcclift_list[pos]
-		spectrogram[26:39,[pos]] = np.rot90(mfccs[:,np.newaxis],2)
-	return spectrogram
-		
+			#mfccs = np.append(energy_list[pos],mfcclift_list[pos])
+			mfcclift_list[pos][0] = energy_list[pos]
+			mfccs = mfcclift_list[pos]
+			cepstrum[[pos],:] = mfccs[:,np.newaxis].T
+	print(cepstrum.shape)
+	print(cepstrum[-1,:])
+	return cepstrum
 	
-def delta(spectogram, N):
-	"""compute 13 delta + 13 delta_delta features"""
-	
-	
-	#features = np.rot90(spectrogram[26:39,[-1]],2)
-	features = spectrogram[26:39,[-1]]
-	#~ print(features)
-	#~ print(features.shape)
-	if N < 1:
-		raise ValueError('N must be an integer >= 1')
-	frame_num = 13
-	denominator = 2 * sum([i**2 for i in range(1, N+1)])
-	delta_feat = np.zeros_like(spectrogram[26:39,:].T)
+def delta(features, pad_fac=2):
+	"""compute 13 delta or 13 delta_delta features"""
+	frame_num = len(features)
+	denominator = 2 * sum([i**2 for i in range(1, pad_fac+1)])
+	delta_features = np.zeros_like(features)
 	#~ print(frame_num)
 	#~ print('denom:',denominator)
-	print('delta_feat',delta_feat.shape)
+	print('delta_feat',delta_features.shape)
 	
-	padded = np.pad(spectrogram[26:39,:].T, ((N, N), (0, 0)), mode='edge')   # padded version of feat
+	padded = np.pad(features, ((pad_fac, pad_fac), (0, 0)), mode='edge') 
 	print(padded)
 	print(padded.shape)
-	
 	# numerical gradient:
 	for t in range(frame_num):
-		delta_feat[t] = np.dot(np.arange(-N, N+1), padded[t : t+2*N+1]) / denominator
-		#~ print(np.arange(-N, N+1))
-		#~ print(padded[t : t+2*N+1])
-	print(delta_feat[t])	
-		
-	return delta_feat
+		delta_features[t] = np.dot(np.arange(-pad_fac, pad_fac+1),
+							padded[t : t+2*pad_fac+1]) / denominator	
+	print(delta_features[t])			
+	return delta_features
 
+def spectrograms(cepstrum,delta_features,delta_delta_features):
+	"""spectrogram with 39 features"""
+	print(cepstrum.shape)
+	#np.concatenate(cepstrum,delta_features,deltadelta_features)
+	spectrogram = np.append(cepstrum,delta_features, axis=1)
+	spectrogram = np.append(spectrogram,delta_delta_features, axis=1)
+	print(spectrogram.shape)
+	
+	return spectrogram
 
-#=======================================================================
-# read in input
-#=======================================================================
+def main(args):
+	#=======================================================================
+	# read in input
+	#=======================================================================
+	
+	# read in audio: .wav files
+	#filename = 'artos_ofenrohr_16k.wav'
+	#~ filename = 'english.wav'
+	#~ (fs,audio) = wav.read(filename)
+	
+	# read in audio: .raw files	
+	filename = 'is1a0001_043.raw'
+	#filename = 'rolladen_runter.raw'
+	audio = loadrawdata(filename)
+	
+	# record audio: extranal mic
+	#~ audio = wavrecord(fs, duration)
+	
+	#=======================================================================
+	# MFCC processing pipeline
+	#=======================================================================	
+	
+	# preemphasis
+	audio_pre = preemphasis(audio)
+	# windowing, fft
+	magfft_list,powfft_list, win, num_fft = winfft(audio_pre, fs, frame_time, step_time)
+	# mel filterbank
+	melbank = melbanks(fs, num_bins, low_freq, num_fft)
+	# log-melspec + log-energy features
+	melspec_list, energy_list  = melspec(powfft_list, melbank)
+	# 12 MFCC features
+	mfcc_list = mfcc(melspec_list,numcep=13)
+	#optimize MFCC features:
+	mfcclift_list = dctopt(mfcc_list,lift_factor)
+	#concatenate to 13 MFCC features:
+	cepstrum = staticfeatures(energy_list, mfcclift_list)
+	# 13 delta features
+	delta_features = delta(cepstrum)
+	# 13 delta_delta features
+	delta_delta_features = delta(delta_features)
+	# 39 features
+	spectrogram = spectrograms(cepstrum,delta_features,delta_delta_features)
+	
+	#=======================================================================
+	# play audio
+	#=======================================================================
+	
+	#~ wavplayer(audio,fs)
+	#~ wavplayer(audio3,fs)
+	
+	#=======================================================================
+	#plot files:
+	#=======================================================================
+	
+	#~ plotting(audio, fs,1, 211, 'audio .wav file')
+	#~ plotting(audio_pre, fs,1, 212,'pre-emphasis')
+	#plotting(win, fs,2,211,'hamming window','samples')
+	#~ plotting(magfft_list[0], fs,3,211,'fft magnitude','samples')
+	#~ plotting(powfft_list[0], fs,3,212,'fft power','samples')
+	
+	
+	plt.figure(5)
+	plt.suptitle('39 MFCC Spectrogram', fontsize=14,ha='center')
+	plt.title(filename, fontsize=12,ha='center')
+	plt.pcolormesh(spectrogram.T)
+	plt.axis([0, spectrogram.shape[0], 0, spectrogram.shape[1]])
+	plt.xticks([w*100 for w in range(int(len(spectrogram)*(10/1000))+1)], 
+			   [w for w in range(int(len(spectrogram)*(10/1000)+1))])
+	plt.xlabel('Time [sec]')
+	plt.ylabel('MFCCs')
+	
+	plt.show()
+	plt.clf()
+	return 0
 
-# read in audio: .wav files
-#wavname = 'artos_ofenrohr_16k.wav'
-wavname = 'english.wav'
-(fs,audio) = wav.read(wavname)
+if __name__ == '__main__':
+    import sys
+    sys.exit(main(sys.argv))
 
-# read in audio: .raw files	
-filename = 'is1a0001_043.raw'
-#filename = 'rolladen_runter.raw'
-#~ audio = loadrawdata(filename)
-
-# record audio: extranal mic
-#~ audio = wavrecord(fs, duration)
-
-#=======================================================================
-# MFCC processing pipeline
-#=======================================================================	
-
-# preemphasis
-audio_pre = preemphasis(audio)
-# windowing, fft
-magfft_list,powfft_list, win, num_fft = winfft(audio_pre, fs, frame_time, step_time)
-# mel filterbank
-melbank = melbank(fs, num_bins, low_freq, num_fft)
-# log-melspec + log-energy features
-melspec_list, energy_list  = melspec(powfft_list, melbank)
-# 12 MFCC features
-mfcc_list = mfcc(melspec_list,numcep=13)
-#optimize MFCC features:
-mfcclift_list = dctopt(mfcc_list,lift_factor)
-
-#init spectrogramm with 13 MFCC features:
-spectrogram = spectrogram(energy_list, mfcclift_list)
-print(spectrogram[:,[-2]])
-print(spectrogram.shape)
-# 13 delta + 13 delta_delta features
-delta(spectrogram, delta_factor)
-
-#=======================================================================
-# play audio
-#=======================================================================
-
-#~ wavplayer(audio,fs)
-#~ wavplayer(audio3,fs)
-
-#=======================================================================
-#plot files:
-#=======================================================================
-
-#~ plotting(audio, fs,1, 211, 'audio .wav file')
-#~ plotting(audio_pre, fs,1, 212,'pre-emphasis')
-#plotting(win, fs,2,211,'hamming window','samples')
-#~ plotting(magfft_list[0], fs,3,211,'fft magnitude','samples')
-#~ plotting(powfft_list[0], fs,3,212,'fft power','samples')
-
-plt.show()
-plt.clf()
